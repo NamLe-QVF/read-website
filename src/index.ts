@@ -20,22 +20,36 @@ function withRefParams(url: string, refParams: URLSearchParams): string {
   return target.toString();
 }
 
+function parseList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 async function main() {
-  const targetSiteUrl = requireEnv("TARGET_SITE_URL");
-  const articleUrlPattern = requireEnv("ARTICLE_URL_PATTERN");
+  const targetSiteUrls = parseList(requireEnv("TARGET_SITE_URL"));
+  const articleUrlPatterns = parseList(requireEnv("ARTICLE_URL_PATTERN"));
   const readDurationSeconds = Number(process.env.READ_DURATION_SECONDS ?? "60");
   const maxArticlesPerRun = Number(process.env.MAX_ARTICLES_PER_RUN ?? "75");
-  const refParams = new URL(targetSiteUrl).searchParams;
+  const refParams = new URL(targetSiteUrls[0]).searchParams;
 
   const state = await loadState();
 
   if (state.queue.length === 0) {
-    console.log(`Queue empty — crawling ${targetSiteUrl} for article links...`);
-    const found = await crawlArticleLinks(targetSiteUrl, articleUrlPattern);
+    console.log(`Queue empty — crawling ${targetSiteUrls.length} page(s) for article links...`);
     const visitedSet = new Set(state.visitedUrls);
-    const newLinks = found.filter((url) => !visitedSet.has(url));
+    const allFound = new Set<string>();
+
+    for (const siteUrl of targetSiteUrls) {
+      console.log(`  crawling ${siteUrl}`);
+      const found = await crawlArticleLinks(siteUrl, articleUrlPatterns);
+      for (const url of found) allFound.add(url);
+    }
+
+    const newLinks = [...allFound].filter((url) => !visitedSet.has(url));
     state.queue.push(...newLinks);
-    console.log(`Found ${found.length} links, ${newLinks.length} new added to queue.`);
+    console.log(`Found ${allFound.size} links, ${newLinks.length} new added to queue.`);
 
     if (state.queue.length === 0) {
       console.log("No new articles to read. All known articles already visited.");

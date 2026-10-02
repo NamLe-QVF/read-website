@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 
 export async function crawlArticleLinks(
   targetSiteUrl: string,
-  articleUrlPattern: string,
+  articleUrlPatterns: string[],
 ): Promise<string[]> {
   const res = await fetch(targetSiteUrl);
   if (!res.ok) {
@@ -10,7 +10,7 @@ export async function crawlArticleLinks(
   }
   const html = await res.text();
   const $ = cheerio.load(html);
-  const pattern = new RegExp(articleUrlPattern);
+  const patterns = articleUrlPatterns.map((p) => new RegExp(p));
   const base = new URL(targetSiteUrl);
 
   const links = new Set<string>();
@@ -24,7 +24,7 @@ export async function crawlArticleLinks(
       return;
     }
     if (absolute.origin !== base.origin) return;
-    if (!pattern.test(absolute.pathname)) return;
+    if (!patterns.some((pattern) => pattern.test(absolute.pathname))) return;
     links.add(absolute.toString());
   });
 
