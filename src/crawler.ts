@@ -4,7 +4,12 @@ export async function crawlArticleLinks(
   targetSiteUrl: string,
   articleUrlPatterns: string[],
 ): Promise<string[]> {
-  const res = await fetch(targetSiteUrl);
+  const res = await fetch(targetSiteUrl, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+    },
+  });
   if (!res.ok) {
     throw new Error(`Failed to fetch ${targetSiteUrl}: ${res.status}`);
   }

@@ -1,8 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 export interface State {
+  date: string;
   queue: string[];
-  visitedUrls: string[];
 }
 
 const STATE_PATH = new URL("../state.json", import.meta.url);
@@ -12,11 +12,11 @@ export async function loadState(): Promise<State> {
     const raw = await readFile(STATE_PATH, "utf-8");
     const parsed = JSON.parse(raw);
     return {
+      date: typeof parsed.date === "string" ? parsed.date : "",
       queue: Array.isArray(parsed.queue) ? parsed.queue : [],
-      visitedUrls: Array.isArray(parsed.visitedUrls) ? parsed.visitedUrls : [],
     };
   } catch {
-    return { queue: [], visitedUrls: [] };
+    return { date: "", queue: [] };
   }
 }
 

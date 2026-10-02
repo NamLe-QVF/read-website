@@ -9,6 +9,13 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function parseList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 function withRefParams(url: string, refParams: URLSearchParams): string {
   if ([...refParams].length === 0) return url;
   const target = new URL(url);
@@ -20,69 +27,90 @@ function withRefParams(url: string, refParams: URLSearchParams): string {
   return target.toString();
 }
 
-function parseList(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
+function shuffle<T>(items: T[]): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+function minutesUntilNextUtcMidnight(now: Date): number {
+  const nextMidnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0, 0, 0, 0,
+  );
+  return (nextMidnight - now.getTime()) / 60_000;
 }
 
 async function main() {
   const targetSiteUrls = parseList(requireEnv("TARGET_SITE_URL"));
   const articleUrlPatterns = parseList(requireEnv("ARTICLE_URL_PATTERN"));
-  const readDurationSeconds = Number(process.env.READ_DURATION_SECONDS ?? "60");
-  const maxArticlesPerRun = Number(process.env.MAX_ARTICLES_PER_RUN ?? "75");
+  const readDurationSeconds = Number(process.env.READ_DURATION_SECONDS ?? "300");
+  const tickIntervalMinutes = Number(process.env.TICK_INTERVAL_MINUTES ?? "15");
   const refParams = new URL(targetSiteUrls[0]).searchParams;
+
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
 
   const state = await loadState();
 
-  if (state.queue.length === 0) {
-    console.log(`Queue empty — crawling ${targetSiteUrls.length} page(s) for article links...`);
-    const visitedSet = new Set(state.visitedUrls);
+  if (state.date !== today) {
+    console.log(`New day (${today}) — refilling today's queue...`);
     const allFound = new Set<string>();
-
     for (const siteUrl of targetSiteUrls) {
       console.log(`  crawling ${siteUrl}`);
       const found = await crawlArticleLinks(siteUrl, articleUrlPatterns);
       for (const url of found) allFound.add(url);
     }
-
-    const newLinks = [...allFound].filter((url) => !visitedSet.has(url));
-    state.queue.push(...newLinks);
-    console.log(`Found ${allFound.size} links, ${newLinks.length} new added to queue.`);
-
-    if (state.queue.length === 0) {
-      console.log("No new articles to read. All known articles already visited.");
-      return;
-    }
+    state.date = today;
+    state.queue = shuffle([...allFound]);
+    console.log(`Queued ${state.queue.length} article(s) for today, in random order.`);
+    await saveState(state);
   }
 
-  const batch = state.queue.slice(0, maxArticlesPerRun);
-  console.log(`Visiting ${batch.length} article(s), ${readDurationSeconds}s each.`);
+  if (state.queue.length === 0) {
+    console.log("Today's queue is already empty. Nothing to do this tick.");
+    return;
+  }
+
+  const minutesLeftToday = minutesUntilNextUtcMidnight(now);
+  const ticksRemaining = Math.max(1, Math.ceil(minutesLeftToday / tickIntervalMinutes));
+  const articlesRemaining = state.queue.length;
+  const mustCatchUp = articlesRemaining >= ticksRemaining;
+  const probability = Math.min(1, articlesRemaining / ticksRemaining);
+  const shouldRead = mustCatchUp || Math.random() < probability;
+
+  console.log(
+    `${articlesRemaining} article(s) left, ~${ticksRemaining} tick(s) left today ` +
+    `(probability=${probability.toFixed(2)}, catchUp=${mustCatchUp}).`,
+  );
+
+  if (!shouldRead) {
+    console.log("Skipping this tick (random pacing).");
+    return;
+  }
+
+  const url = state.queue[0];
+  const visitUrl = withRefParams(url, refParams);
 
   const browser = await chromium.launch({ headless: true });
   try {
-    for (const url of batch) {
-      const visitUrl = withRefParams(url, refParams);
-      console.log(`Reading: ${visitUrl}`);
-      try {
-        const actualSeconds = await readArticle(browser, visitUrl, readDurationSeconds);
-        console.log(`  done in ${actualSeconds}s`);
-      } catch (err) {
-        console.error(`  failed to read ${url}:`, err);
-      }
-
-      state.queue = state.queue.filter((u) => u !== url);
-      if (!state.visitedUrls.includes(url)) {
-        state.visitedUrls.push(url);
-      }
-      await saveState(state);
-    }
+    console.log(`Reading: ${visitUrl}`);
+    const actualSeconds = await readArticle(browser, visitUrl, readDurationSeconds);
+    console.log(`  done in ${actualSeconds}s`);
+  } catch (err) {
+    console.error(`  failed to read ${url}:`, err);
   } finally {
     await browser.close();
   }
 
-  console.log("Run complete.");
+  state.queue.shift();
+  await saveState(state);
+  console.log(`Remaining today: ${state.queue.length}`);
 }
 
 main().catch((err) => {
