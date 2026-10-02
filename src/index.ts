@@ -9,11 +9,23 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function withRefParams(url: string, refParams: URLSearchParams): string {
+  if ([...refParams].length === 0) return url;
+  const target = new URL(url);
+  for (const [key, value] of refParams) {
+    if (!target.searchParams.has(key)) {
+      target.searchParams.set(key, value);
+    }
+  }
+  return target.toString();
+}
+
 async function main() {
   const targetSiteUrl = requireEnv("TARGET_SITE_URL");
   const articleUrlPattern = requireEnv("ARTICLE_URL_PATTERN");
   const readDurationSeconds = Number(process.env.READ_DURATION_SECONDS ?? "60");
   const maxArticlesPerRun = Number(process.env.MAX_ARTICLES_PER_RUN ?? "75");
+  const refParams = new URL(targetSiteUrl).searchParams;
 
   const state = await loadState();
 
@@ -37,9 +49,10 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   try {
     for (const url of batch) {
-      console.log(`Reading: ${url}`);
+      const visitUrl = withRefParams(url, refParams);
+      console.log(`Reading: ${visitUrl}`);
       try {
-        const actualSeconds = await readArticle(browser, url, readDurationSeconds);
+        const actualSeconds = await readArticle(browser, visitUrl, readDurationSeconds);
         console.log(`  done in ${actualSeconds}s`);
       } catch (err) {
         console.error(`  failed to read ${url}:`, err);
