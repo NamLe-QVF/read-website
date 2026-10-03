@@ -1,7 +1,14 @@
+import { appendFile } from "node:fs/promises";
 import { chromium } from "playwright";
 import { crawlArticleLinks } from "./crawler.js";
 import { loadState, saveState } from "./state.js";
 import { readArticle } from "./browser.js";
+
+async function appendSummary(line: string): Promise<void> {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+  await appendFile(summaryPath, line + "\n").catch(() => {});
+}
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -74,6 +81,7 @@ async function main() {
 
   if (state.queue.length === 0) {
     console.log("Today's queue is already empty. Nothing to do this tick.");
+    await appendSummary("Không còn bài nào trong hàng đợi hôm nay — không đọc gì ở tick này.");
     return;
   }
 
@@ -91,6 +99,9 @@ async function main() {
 
   if (!shouldRead) {
     console.log("Skipping this tick (random pacing).");
+    await appendSummary(
+      `Bỏ qua tick này (random pacing). Còn ${articlesRemaining} bài trong hàng đợi hôm nay.`,
+    );
     return;
   }
 
@@ -102,8 +113,10 @@ async function main() {
     console.log(`Reading: ${visitUrl}`);
     const actualSeconds = await readArticle(browser, visitUrl, readDurationSeconds);
     console.log(`  done in ${actualSeconds}s`);
+    await appendSummary(`✅ Đã đọc: ${visitUrl} (${actualSeconds}s)`);
   } catch (err) {
     console.error(`  failed to read ${url}:`, err);
+    await appendSummary(`❌ Lỗi khi đọc: ${visitUrl} — ${String(err)}`);
   } finally {
     await browser.close();
   }
@@ -111,6 +124,7 @@ async function main() {
   state.queue.shift();
   await saveState(state);
   console.log(`Remaining today: ${state.queue.length}`);
+  await appendSummary(`Còn lại hôm nay: ${state.queue.length} bài.`);
 }
 
 main().catch((err) => {
