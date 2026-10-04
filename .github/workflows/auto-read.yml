@@ -1,8 +1,6 @@
 name: Auto Read Website
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'
   workflow_dispatch: {}
 
 concurrency:
@@ -31,7 +29,10 @@ jobs:
           TARGET_SITE_URL: ${{ vars.TARGET_SITE_URL }}
           ARTICLE_URL_PATTERN: ${{ vars.ARTICLE_URL_PATTERN }}
           READ_DURATION_SECONDS: '300'
-          TICK_INTERVAL_MINUTES: '15'
+          TICK_INTERVAL_MINUTES: '5'
+          TIMEZONE: 'Asia/Ho_Chi_Minh'
+          ACTIVE_START_HOUR: '7'
+          ACTIVE_END_HOUR: '23'
 
       - name: Commit updated state
         run: |

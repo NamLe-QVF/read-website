@@ -43,25 +43,34 @@ function shuffle<T>(items: T[]): T[] {
   return result;
 }
 
-function minutesUntilNextUtcMidnight(now: Date): number {
-  const nextMidnight = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate() + 1,
-    0, 0, 0, 0,
-  );
-  return (nextMidnight - now.getTime()) / 60_000;
+function localParts(now: Date, timeZone: string): { date: string; minutesOfDay: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    minutesOfDay: Number(get("hour")) * 60 + Number(get("minute")),
+  };
 }
 
 async function main() {
   const targetSiteUrls = parseList(requireEnv("TARGET_SITE_URL"));
   const articleUrlPatterns = parseList(requireEnv("ARTICLE_URL_PATTERN"));
   const readDurationSeconds = Number(process.env.READ_DURATION_SECONDS ?? "300");
-  const tickIntervalMinutes = Number(process.env.TICK_INTERVAL_MINUTES ?? "15");
+  const tickIntervalMinutes = Number(process.env.TICK_INTERVAL_MINUTES ?? "5");
+  const timeZone = process.env.TIMEZONE ?? "Asia/Ho_Chi_Minh";
+  const activeStartMinutes = Number(process.env.ACTIVE_START_HOUR ?? "7") * 60;
+  const activeEndMinutes = Number(process.env.ACTIVE_END_HOUR ?? "23") * 60;
   const refParams = new URL(targetSiteUrls[0]).searchParams;
 
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
+  const { date: today, minutesOfDay } = localParts(new Date(), timeZone);
 
   const state = await loadState();
 
@@ -85,15 +94,21 @@ async function main() {
     return;
   }
 
-  const minutesLeftToday = minutesUntilNextUtcMidnight(now);
-  const ticksRemaining = Math.max(1, Math.ceil(minutesLeftToday / tickIntervalMinutes));
+  if (minutesOfDay < activeStartMinutes || minutesOfDay >= activeEndMinutes) {
+    console.log("Outside active hours. Skipping this tick.");
+    await appendSummary("Ngoài khung giờ hoạt động — không đọc ở tick này.");
+    return;
+  }
+
+  const minutesLeftInWindow = activeEndMinutes - minutesOfDay;
+  const ticksRemaining = Math.max(1, Math.ceil(minutesLeftInWindow / tickIntervalMinutes));
   const articlesRemaining = state.queue.length;
   const mustCatchUp = articlesRemaining >= ticksRemaining;
   const probability = Math.min(1, articlesRemaining / ticksRemaining);
   const shouldRead = mustCatchUp || Math.random() < probability;
 
   console.log(
-    `${articlesRemaining} article(s) left, ~${ticksRemaining} tick(s) left today ` +
+    `${articlesRemaining} article(s) left, ~${ticksRemaining} tick(s) left in window ` +
     `(probability=${probability.toFixed(2)}, catchUp=${mustCatchUp}).`,
   );
 
