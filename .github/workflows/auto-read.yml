@@ -29,7 +29,7 @@ jobs:
           TARGET_SITE_URL: ${{ vars.TARGET_SITE_URL }}
           ARTICLE_URL_PATTERN: ${{ vars.ARTICLE_URL_PATTERN }}
           READ_DURATION_SECONDS: '300'
-          TICK_INTERVAL_MINUTES: '5'
+          TICK_INTERVAL_MINUTES: '10'
           TIMEZONE: 'Asia/Ho_Chi_Minh'
           ACTIVE_START_HOUR: '7'
           ACTIVE_END_HOUR: '23'
